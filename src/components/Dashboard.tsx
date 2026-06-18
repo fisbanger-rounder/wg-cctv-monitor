@@ -46,8 +46,20 @@ export default function Dashboard() {
     return () => { client.end(); };
   }, []);
 
-  const deviceList = Object.values(devices).sort((a, b) =>
-    a.name.localeCompare(b.name)
+  const deviceList = Object.values(devices).sort((a, b) => {
+    // 1. UP before DOWN
+    if (a.status !== b.status) return a.status === 'UP' ? -1 : 1;
+    // 2. Both UP → fastest latency first (null goes last)
+    if (a.status === 'UP') {
+      if (a.latency === null && b.latency === null) return a.name.localeCompare(b.name);
+      if (a.latency === null) return 1;
+      if (b.latency === null) return -1;
+      return a.latency - b.latency;
+    }
+     // 3. Both DOWN → alphabetical
+    return a.name.localeCompare(b.name);
+  }
+   
   );
   const upCount   = deviceList.filter(d => d.status === 'UP').length;
   const downCount = deviceList.filter(d => d.status === 'DOWN').length;
