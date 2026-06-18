@@ -12,10 +12,29 @@ interface DeviceStatus {
   ts: string;
 }
 
+function timeAgo(ms: number): string {
+  const seconds = Math.floor((Date.now() - ms) / 1000);
+  if (seconds < 60)                      return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)                      return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24)                        return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 export default function Dashboard() {
-  const [devices, setDevices]       = useState<Record<string, DeviceStatus>>({});
-  const [connected, setConnected]   = useState(false);
+  const [devices, setDevices]         = useState<Record<string, DeviceStatus>>({});
+  const [connected, setConnected]     = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [lastSeen, setLastSeen]       = useState<Record<string, number>>({});
+  const [, setTick]                   = useState(0); // drives relative-time re-renders
+
+  // Re-render every 30s so "X ago" labels stay fresh
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const client = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
@@ -38,6 +57,10 @@ export default function Dashboard() {
         const d: DeviceStatus = { ...parsed.data, ts: parsed.ts };
         setDevices(prev => ({ ...prev, [d.name]: d }));
         setLastUpdated(new Date());
+        // Only record lastSeen when device is UP
+        if (d.status === 'UP') {
+          setLastSeen(prev => ({ ...prev, [d.name]: Date.now() }));
+        }
       } catch (e) {
         console.error('Failed to parse MQTT message', e);
       }
@@ -56,11 +79,10 @@ export default function Dashboard() {
       if (b.latency === null) return -1;
       return a.latency - b.latency;
     }
-     // 3. Both DOWN → alphabetical
+    // 3. Both DOWN → alphabetical
     return a.name.localeCompare(b.name);
-  }
-   
-  );
+  });
+
   const upCount   = deviceList.filter(d => d.status === 'UP').length;
   const downCount = deviceList.filter(d => d.status === 'DOWN').length;
 
@@ -74,19 +96,15 @@ export default function Dashboard() {
           <p className="text-gray-400 text-sm mt-1">MikroTik Peer Status</p>
         </div>
         <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
-          connected
-            ? 'bg-green-900/40 text-green-400'
-            : 'bg-red-900/40 text-red-400'
+          connected ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'
         }`}>
-          <span className={`w-2 h-2 rounded-full ${
-            connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
-          }`} />
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
           {connected ? 'Live' : 'Disconnected'}
         </div>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         {[
           { label: 'Total',   value: deviceList.length, color: 'text-white' },
           { label: 'Online',  value: upCount,           color: 'text-green-400' },
@@ -97,6 +115,15 @@ export default function Dashboard() {
             <p className={`text-3xl font-bold ${color}`}>{value}</p>
           </div>
         ))}
+        <div className="bg-gray-900 rounded-xl p-4 border border-gray-800">
+          <p className="text-xs text-gray-400 mb-1">Last Updated</p>
+          <p className="text-lg font-bold text-white leading-tight">
+            {lastUpdated ? lastUpdated.toLocaleTimeString() : '—'}
+          </p>
+          <p className="text-xs text-gray-600 mt-1">
+            {lastUpdated ? lastUpdated.toLocaleDateString() : 'No data yet'}
+          </p>
+        </div>
       </div>
 
       {/* Device grid */}
@@ -112,67 +139,71 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {deviceList.map(device => (
-            <div
-              key={device.name}
-              className={`bg-gray-900 rounded-xl p-5 border transition-colors ${
-                device.status === 'UP'
-                  ? 'border-green-800/50'
-                  : 'border-red-800/50'
-              }`}
-            >
-              {/* Device header */}
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <p className="font-semibold text-sm text-white">{device.name}</p>
-                  <p className="text-gray-500 text-xs mt-0.5 font-mono">{device.ip}</p>
-                </div>
-                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
-                  device.status === 'UP'
-                    ? 'bg-green-900/60 text-green-400'
-                    : 'bg-red-900/60 text-red-400'
-                }`}>
-                  {device.status}
-                </span>
-              </div>
+          {deviceList.map(device => {
+            const seenAt  = lastSeen[device.name];
+            const isUp    = device.status === 'UP';
 
-              {/* Latency bar */}
-              <div className="mb-3">
-                <div className="flex justify-between text-xs text-gray-500 mb-1">
-                  <span>Latency</span>
-                  <span className={device.status === 'UP' ? 'text-green-400' : 'text-gray-600'}>
-                    {device.latency !== null ? `${device.latency} ms` : '—'}
+            // Label logic:
+            // UP   + seenAt  → "Just now" / "Xm ago" (should always be recent)
+            // DOWN + seenAt  → "Last seen Xh ago"
+            // DOWN + no data → "Never seen online"
+            const lastSeenLabel = isUp
+              ? (seenAt ? timeAgo(seenAt) : 'Just now')
+              : (seenAt ? `Last seen ${timeAgo(seenAt)}` : 'Never seen online');
+
+            return (
+              <div
+                key={device.name}
+                className={`bg-gray-900 rounded-xl p-5 border transition-colors ${
+                  isUp ? 'border-green-800/50' : 'border-red-800/50'
+                }`}
+              >
+                {/* Device header */}
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <p className="font-semibold text-sm text-white">{device.name}</p>
+                    <p className="text-gray-500 text-xs mt-0.5 font-mono">{device.ip}</p>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                    isUp ? 'bg-green-900/60 text-green-400' : 'bg-red-900/60 text-red-400'
+                  }`}>
+                    {device.status}
                   </span>
                 </div>
-                <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      device.status === 'UP' ? 'bg-green-500' : 'bg-gray-700'
-                    }`}
-                    style={{
-                      width: device.latency !== null
-                        ? `${Math.min((device.latency / 200) * 100, 100)}%`
-                        : '0%'
-                    }}
-                  />
-                </div>
-              </div>
 
-              {/* Checked at */}
-              <p className="text-gray-600 text-xs">
-                {new Date(device.checked_at).toLocaleTimeString()}
-              </p>
-            </div>
-          ))}
+                {/* Latency bar */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span>Latency</span>
+                    <span className={isUp ? 'text-green-400' : 'text-gray-600'}>
+                      {device.latency !== null ? `${device.latency} ms` : '—'}
+                    </span>
+                  </div>
+                  <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        isUp ? 'bg-green-500' : 'bg-gray-700'
+                      }`}
+                      style={{
+                        width: device.latency !== null
+                          ? `${Math.min((device.latency / 200) * 100, 100)}%`
+                          : '0%'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Last seen */}
+                <p className={`text-xs mt-3 ${isUp ? 'text-green-600' : 'text-gray-600'}`}>
+                  {lastSeenLabel}
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Footer */}
-      <p className="text-center text-gray-700 text-xs mt-10">
-        {lastUpdated
-          ? `Last updated: ${lastUpdated.toLocaleTimeString()}`
-          : 'No data received yet'}
-      </p>
+
     </div>
   );
 }
