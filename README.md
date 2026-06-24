@@ -1,36 +1,98 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WireGuard CCTV Monitor (wg-cctv-monitor)
 
-## Getting Started
+A modern, real-time dashboard for monitoring the status and latency of WireGuard peers (MikroTik) via MQTT. Built with Next.js, React, Tailwind CSS, and MQTT.js.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## 🛠️ Prerequisites
+
+Before running the application, make sure you have the following installed:
+- **Node.js**: v18.x or higher (v20.x recommended)
+- **npm**: v9.x or higher
+
+---
+
+## ⚙️ Environment Configuration
+
+To allow the dashboard to connect to your MQTT broker, create a `.env.local` file in the root directory:
+
+```env
+# MQTT Broker connection URL (supports ws://, wss://, mqtt://, mqtts://)
+NEXT_PUBLIC_MQTT_URL=wss://your-mqtt-broker.com:port
+
+# Optional Broker authentication
+NEXT_PUBLIC_MQTT_USERNAME=your-username
+NEXT_PUBLIC_MQTT_PASSWORD=your-password
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+> [!NOTE]
+> If these environment variables are not set or are invalid, the dashboard will mount successfully but will show a "Waiting for data…" message with a console warning.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🚀 How to Run Locally (Development)
 
-## Learn More
+### 1. Install Dependencies
+Run the following command in the project root directory:
+```bash
+npm install
+```
 
-To learn more about Next.js, take a look at the following resources:
+### 2. Start the Development Server
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+#### Option A: Standard Command (All OS)
+If your folder path does not contain special characters:
+```bash
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+#### Option B: Windows Path Escape Fallback (Recommended if path contains `&` or spaces)
+If your directory path contains special characters like `&` (e.g., `R&D` or `Explore`), the Windows shell might throw execution errors (like `node_modules\.bin\... is not recognized`). Use this direct command to bypass the issue:
+```bash
+node node_modules/next/dist/bin/next dev
+```
 
-## Deploy on Vercel
+Open [http://localhost:3000](http://localhost:3000) in your browser to see the live-reloading dashboard.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📦 How to Build and Run in Production
+
+To prepare the application for production, you must build the optimized static asset bundle and run the server.
+
+### 1. Build the Project
+
+#### Option A: Standard Build
+```bash
+npm run build
+```
+
+#### Option B: Windows Path Fallback Build
+```bash
+node node_modules/next/dist/bin/next build
+```
+
+### 2. Start the Production Server
+
+Once the build is complete, start the production server:
+
+#### Option A: Standard Start
+```bash
+npm run start
+```
+
+#### Option B: Windows Path Fallback Start
+```bash
+node node_modules/next/dist/bin/next start
+```
+
+The production server will listen on port `3000` by default.
+
+---
+
+## 🔍 Codebase Diagnostics & Testing
+
+To check for typescript or linting errors, run:
+
+- **Typecheck:** `node node_modules/typescript/lib/tsc.js --noEmit`
+- **Linter:** `node node_modules/eslint/bin/eslint.js .`
