@@ -37,7 +37,13 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    const client = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL!, {
+    const mqttUrl = process.env.NEXT_PUBLIC_MQTT_URL;
+    if (!mqttUrl) {
+      console.warn('NEXT_PUBLIC_MQTT_URL is not defined. Skipping MQTT connection.');
+      return;
+    }
+
+    const client = mqtt.connect(mqttUrl, {
       username:        process.env.NEXT_PUBLIC_MQTT_USERNAME,
       password:        process.env.NEXT_PUBLIC_MQTT_PASSWORD,
       reconnectPeriod: 5000,
